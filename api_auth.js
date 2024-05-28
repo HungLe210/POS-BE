@@ -1,4 +1,5 @@
 const express = require("express");
+const router = express.Router();
 const bcrypt = require("bcrypt");
 const Users = require("./models/user_schema");
 const jwt = require("./jwt");
@@ -7,26 +8,6 @@ const path = require("path");
 const fs = require("fs-extra");
 const nodeMailer = require("nodemailer");
 const mailConfig = require('./config/mail.config');
-
-
-//express support creating new website
-const app = express();
-
-require('dotenv').config({ path: __dirname + "/.env" });
-require('dotenv').config({ path: __dirname + "./config/mail.config.js" });
-
-//handle HTTP request
-const bodyParser = require("body-parser");
-
-//manage CORS -- Cross-Origin Resource Sharing -> Easier when building API
-const cors = require("cors");
-
-
-app.use(express.static(__dirname + "/uploaded"));
-
-
-
-require("./db");
 
 // const { error } = require("console");
 // const { verify } = require("crypto");
@@ -124,7 +105,7 @@ uploadImage = async (files, doc) => {
 
 
 
-app.post("/register", async (req, res) => {
+router.post("/register", async (req, res) => {
     try {
         req.body.password = await bcrypt.hash(req.body.password, 8);  //hash password
         const { first_name, last_name, email } = req.body;
@@ -159,7 +140,7 @@ app.post("/register", async (req, res) => {
 })
 
 
-app.post("/login", async (req, res) => {
+router.post("/login", async (req, res) => {
     let doc = await Users.findOne({ username: req.body.username }); //find user by user name to check duplicated
     if (doc) {
         if (bcrypt.compareSync(req.body.password, doc.password)) {
@@ -194,7 +175,7 @@ app.post("/login", async (req, res) => {
 });
 
 
-app.get("/activation/:token", async (req, res) => {
+router.get("/activation/:token", async (req, res) => {
     let token = req.params.token;
     if (token) {
         //console.log(token);
@@ -219,11 +200,11 @@ app.get("/activation/:token", async (req, res) => {
     } else
         res.json({ result: "error", message: "Token not found!" })
 });
-
-app.post("/password/reset", async (req, res) => {
+router.post("/password/reset", async (req, res) => {
     let expired_time = "60m";
     const { email } = req.body;
-    const check = await Users.findOne({ email })
+    const check = await Users.findOne({ email });
+    //console.log({ email });
     if (!check) {
         return res.json({
             result: "error",
@@ -239,7 +220,7 @@ app.post("/password/reset", async (req, res) => {
         }
     );
 
-    Users.updateOne({ resetPasswordToken: token }).then(result => {
+    check.updateOne({ resetPasswordToken: token }).then(result => {
         if (result.nModified === 0) {
             console.log("RESET PASSWORD LINK ERROR", err);
             return res.status(400).json({
@@ -261,38 +242,56 @@ app.post("/password/reset", async (req, res) => {
 });
 
 
-app.put("/password-reset", async (req, res) => {
+router.put("/password-reset", async (req, res) => {
     const { password } = req.body;
     let resetPasswordToken = req.query.token;
-    console.log(resetPasswordToken);
-    console.log({ password });
-    console.log(password);
+    // console.log(resetPasswordToken);
+    // console.log({ password });
+    // console.log(password);
     if (resetPasswordToken) {
-        let encrypt_pass = await bcrypt.hash(password, 8);
-        let updatedFields = {
-            password: encrypt_pass,
-            resetPasswordToken: ""
-        }
-        await Users.findOneAndUpdate(
-            { resetPasswordToken: resetPasswordToken },
-            updatedFields
-        ).then(response => {
-            return res.json({
-                result: "success",
-                message: "Password update succesfully your can try login again"
+        try {
+            let encrypt_pass = await bcrypt.hash(password, 8);
+            let updatedFields = {
+                password: encrypt_pass,
+                resetPasswordToken: ""
+            };
+            Users.findOneAndUpdate(
+                { resetPasswordToken: resetPasswordToken },
+                updatedFields,
+                { new: true } // Đảm bảo nhận tài liệu đã cập nhật
+            ).then(responses => {
+                if (responses) {
+                    return res.json({
+                        result: "success",
+                        message: "Password updated successfully, you can try logging in again"
+                    });
+                } else {
+                    return res.json({
+                        result: "error",
+                        message: "Token not found or expired"
+                    });
+                }
+            }).catch(err => {
+                console.log(err);
+                return res.json({
+                    result: "error",
+                    message: "An error occurred while updating the password"
+                });
             });
-        }).catch(err => {
-            console.log(error);
-            return;
-        });
+        } catch (err) {
+            console.log(err);
+            return res.json({
+                result: "error",
+                message: "An error occurred while processing the request"
+            });
+        }
     } else {
         return res.json({
             result: "error",
-            message: "No Found Token"
+            message: "Token not found"
         });
     }
-})
-
+});
 
 
 
@@ -307,7 +306,7 @@ app.put("/password-reset", async (req, res) => {
 
 
 
-app.put("/profile", async (req, res) => {
+router.put("/profile", async (req, res) => {
     try {
         //console.log(__dirname); //Backend folder
         var form = new formidable.IncomingForm();
@@ -330,7 +329,7 @@ app.put("/profile", async (req, res) => {
     }
 });
 
-app.get("/profile/id/:id", async (req, res) => {
+router.get("/profile/id/:id", async (req, res) => {
     let doc = await Users.findOne({ _id: req.params.id });
     res.json(doc);
 });
